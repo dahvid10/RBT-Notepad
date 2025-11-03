@@ -1,0 +1,5 @@
+{
+  "name": "RBT Notepad",
+  "description": "An application to help Registered Behavior Technicians (RBTs) automate the generation of professional, objective, and measurable session notes using AI, based on key session details.",
+  "requestFramePermissions": []
+}
