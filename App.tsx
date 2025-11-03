@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { NoteForm } from './components/NoteForm';
 import { GeneratedNote } from './components/GeneratedNote';
@@ -39,6 +39,25 @@ const App: React.FC = () => {
   // State for main tabs (Form vs Results)
   const [mainTab, setMainTab] = useState<'form' | 'results'>('form');
   const [resultsAvailable, setResultsAvailable] = useState<boolean>(false);
+
+  // State for Theme
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      return savedTheme;
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
+
+  // Effect to apply theme class and save to localStorage
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
 
 
   const handleGenerateNote = useCallback(async () => {
@@ -157,7 +176,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-sans">
-      <Header />
+      <Header theme={theme} setTheme={setTheme} />
       <main className="container mx-auto p-4 md:p-8">
         
         <div className="mb-6 border-b border-slate-200 dark:border-slate-700">
@@ -202,7 +221,12 @@ const App: React.FC = () => {
             <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
             
             <div className={`mt-6 ${activeTab === 'note' ? 'block' : 'hidden'}`}>
-              <GeneratedNote note={generatedNote} isLoading={isNoteLoading} sessionData={sessionData} />
+              <GeneratedNote 
+                note={generatedNote} 
+                isLoading={isNoteLoading} 
+                sessionData={sessionData}
+                onNoteUpdate={setGeneratedNote}
+              />
               {noteError && <ErrorDisplay message={noteError} />}
             </div>
 
@@ -217,6 +241,7 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
+
       </main>
     </div>
   );

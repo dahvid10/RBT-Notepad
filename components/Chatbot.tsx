@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { ChatMessage } from '../types';
-import { LightbulbIcon, SparklesIcon } from './icons';
+import { LightbulbIcon, SparklesIcon, ShareIcon, CheckIcon } from './icons';
 
 interface ChatbotProps {
   messages: ChatMessage[];
@@ -45,6 +45,7 @@ const ChatBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
 
 export const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, onStartChat, isLoading, error }) => {
   const [input, setInput] = useState('');
+  const [justShared, setJustShared] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -53,11 +54,69 @@ export const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, onSta
 
   useEffect(scrollToBottom, [messages, isLoading]);
 
+  useEffect(() => {
+    if (justShared) {
+        const timer = setTimeout(() => setJustShared(false), 2500);
+        return () => clearTimeout(timer);
+    }
+  }, [justShared]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim() && !isLoading) {
       onSendMessage(input.trim());
       setInput('');
+    }
+  };
+  
+  const fallbackCopyTextToClipboard = (text: string) => {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.top = "0";
+    textArea.style.left = "0";
+    textArea.style.position = "fixed";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        setJustShared(true);
+      }
+    } catch (err) {
+      console.error('Fallback: Oops, unable to copy', err);
+    }
+    document.body.removeChild(textArea);
+  };
+
+  const handleShareConversation = async () => {
+    const formattedConversation = messages.map(msg => 
+        `${msg.role === 'model' ? 'AI Assistant' : 'You'}:\n${msg.text}`
+    ).join('\n\n---\n\n');
+
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: 'RBT Session Enhancement Ideas',
+                text: formattedConversation,
+            });
+        } catch (error) {
+             // This error is thrown when the user cancels the share dialog.
+            // We can safely ignore it and not log it as an error.
+            if (!(error instanceof DOMException && error.name === 'AbortError')) {
+                console.error('Error sharing conversation:', error);
+            }
+        }
+    } else {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(formattedConversation).then(() => {
+                setJustShared(true);
+            }).catch(() => {
+                fallbackCopyTextToClipboard(formattedConversation);
+            });
+        } else {
+            fallbackCopyTextToClipboard(formattedConversation);
+        }
     }
   };
 
@@ -93,10 +152,22 @@ export const Chatbot: React.FC<ChatbotProps> = ({ messages, onSendMessage, onSta
   );
 
   return (
-    <div className="bg-white dark:bg-slate-800/50 rounded-lg shadow-md border border-slate-200 dark:border-slate-700 flex flex-col h-[30rem]">
-        <div className="flex items-center gap-3 border-b border-slate-200 dark:border-slate-700 p-4">
-            <SparklesIcon />
-            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Enhancement Ideas Chat</h2>
+    <div className="bg-white dark:bg-slate-800/50 rounded-lg shadow-md border border-slate-200 dark:border-slate-700 flex flex-col max-h-[30rem]">
+        <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-700 p-4">
+            <div className="flex items-center gap-3">
+                <SparklesIcon />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Enhancement Ideas Chat</h2>
+            </div>
+            {messages.length > 0 && (
+                <button 
+                    onClick={handleShareConversation}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium border rounded-md transition-colors duration-200 bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200 dark:border-slate-600"
+                    title="Share Conversation"
+                >
+                    {justShared ? <CheckIcon /> : <ShareIcon />}
+                    {justShared ? 'Copied!' : 'Share'}
+                </button>
+            )}
         </div>
 
         <div className="flex-grow p-4 space-y-4 overflow-y-auto">
