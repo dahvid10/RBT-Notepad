@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI, Chat } from "@google/genai";
 import { NoteForm } from './components/NoteForm';
@@ -7,20 +8,55 @@ import { ErrorDisplay } from './components/ErrorDisplay';
 import { Chatbot } from './components/Chatbot';
 import { Tabs } from './components/Tabs';
 import type { SessionData, ChatMessage } from './types';
-import { generateRbtNote } from './services/geminiService';
+import { generateRbtNote, buildIdeasPrompt, AI_MODELS } from './services/geminiService';
+
+// Create a single, reusable AI instance
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
+const EXAMPLE_SESSION_DATA: SessionData = {
+  clientName: 'Alex P.',
+  sessionDate: new Date().toISOString().split('T')[0],
+  startTime: '09:00',
+  endTime: '11:00',
+  venue: "Client's home",
+  peoplePresent: 'Client, RBT, Mother',
+  clientHealth: 'Client was in good health, energetic, and ready to engage in activities.',
+  goals: [
+    {
+      name: 'Manding for preferred items',
+      progress: 'Client independently manded for 3 different preferred toys (car, ball, blocks) on 4 out of 5 opportunities presented.',
+      methods: 'Natural Environment Teaching (NET), Positive Reinforcement (praise and access to item).',
+    },
+    {
+      name: 'Following 2-step instructions',
+      progress: "Client followed 2-step instructions with gestural prompts on 60% of trials. For example, 'Get your shoes and sit down'.",
+      methods: 'Discrete Trial Training (DTT), gestural prompting, token economy system.',
+    },
+  ],
+  nextSessionPlan: 'Continue working on manding with new items. Fade gestural prompts for 2-step instructions and introduce social story for sharing.',
+};
+
+const RESET_SESSION_DATA: SessionData = {
+  clientName: '',
+  sessionDate: '',
+  startTime: '',
+  endTime: '',
+  venue: "",
+  peoplePresent: '',
+  clientHealth: '',
+  goals: [
+    {
+      name: '',
+      progress: '',
+      methods: '',
+    },
+  ],
+  nextSessionPlan: '',
+};
+
 
 const App: React.FC = () => {
-  const [sessionData, setSessionData] = useState<SessionData>({
-    clientName: '',
-    sessionDate: '',
-    startTime: '',
-    endTime: '',
-    venue: '',
-    peoplePresent: '',
-    clientHealth: '',
-    goals: [{ name: '', progress: '', methods: '' }],
-    nextSessionPlan: '',
-  });
+  const [sessionData, setSessionData] = useState<SessionData>(RESET_SESSION_DATA);
 
   // State for Note Generation
   const [generatedNote, setGeneratedNote] = useState<string>('');
@@ -64,8 +100,12 @@ const App: React.FC = () => {
     setIsNoteLoading(true);
     setNoteError(null);
     setGeneratedNote('');
+    // Clear previous chat history for a clean slate
+    setChatHistory([]);
+    setChat(null);
+    setChatError(null);
     try {
-      const note = await generateRbtNote(sessionData);
+      const note = await generateRbtNote(sessionData, ai);
       setGeneratedNote(note);
       setActiveTab('note');
       setMainTab('results');
@@ -81,35 +121,6 @@ const App: React.FC = () => {
     }
   }, [sessionData]);
 
-  const buildIdeasPrompt = (data: SessionData): string => {
-    const goalsText = data.goals
-      .map(
-        (goal) => `
-  - **Goal:** "${goal.name}"
-    - **Client's Progress:** ${goal.progress}
-    - **Methods Used:** ${goal.methods}`
-      )
-      .join('');
-  
-    return `
-      As an expert Board Certified Behavior Analyst (BCBA) supervising an RBT, your task is to generate creative and actionable ideas to enhance the next therapy session's effectiveness. Based on the session summary below, provide 3-5 concrete suggestions.
-  
-      **Guiding Principles for Your Suggestions:**
-      1.  **Enhance Engagement:** Propose novel materials, activities, or ways to incorporate the client's interests.
-      2.  **Promote Generalization:** Suggest how to practice skills in different settings or with different people/materials.
-      3.  **Increase Skill Acquisition:** Recommend slight modifications to teaching procedures (e.g., changing prompting, reinforcement schedules).
-      4.  **Be Practical:** Ideas should be feasible for an RBT to implement in a typical session setting (${data.venue}).
-  
-      **Session Summary:**
-      - **Client:** ${data.clientName}
-      - **Goals Worked On:** ${goalsText}
-      - **Venue:** ${data.venue}
-      - **Plan for Next Session:** ${data.nextSessionPlan}
-  
-      Now, provide a list of creative and practical ideas to enhance the next session. After you provide the ideas, ask me a follow-up question to keep the conversation going.
-    `;
-  }
-
   const handleStartChat = useCallback(async () => {
     setIsChatLoading(true);
     setChatError(null);
@@ -119,9 +130,8 @@ const App: React.FC = () => {
     setResultsAvailable(true);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const newChat = ai.chats.create({
-        model: 'gemini-2.5-pro',
+        model: AI_MODELS.PRO,
       });
       setChat(newChat);
 
@@ -174,6 +184,14 @@ const App: React.FC = () => {
     }
   }, [chat]);
 
+  const handleLoadExample = () => {
+    setSessionData(EXAMPLE_SESSION_DATA);
+  };
+
+  const handleResetForm = () => {
+    setSessionData(RESET_SESSION_DATA);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 font-sans">
       <Header theme={theme} setTheme={setTheme} />
@@ -212,6 +230,8 @@ const App: React.FC = () => {
               setSessionData={setSessionData}
               onGenerateNote={handleGenerateNote}
               isLoading={isNoteLoading}
+              onLoadExample={handleLoadExample}
+              onResetForm={handleResetForm}
             />
           </div>
         )}
@@ -221,13 +241,14 @@ const App: React.FC = () => {
             <Tabs activeTab={activeTab} setActiveTab={setActiveTab} />
             
             <div className={`mt-6 ${activeTab === 'note' ? 'block' : 'hidden'}`}>
+              {noteError && <ErrorDisplay message={noteError} onDismiss={() => setNoteError(null)} />}
               <GeneratedNote 
                 note={generatedNote} 
                 isLoading={isNoteLoading} 
                 sessionData={sessionData}
                 onNoteUpdate={setGeneratedNote}
+                hasError={!!noteError}
               />
-              {noteError && <ErrorDisplay message={noteError} />}
             </div>
 
             <div className={`mt-6 ${activeTab === 'ideas' ? 'block' : 'hidden'}`}>
@@ -237,6 +258,7 @@ const App: React.FC = () => {
                 onStartChat={handleStartChat}
                 isLoading={isChatLoading}
                 error={chatError}
+                onErrorDismiss={() => setChatError(null)}
               />
             </div>
           </div>
